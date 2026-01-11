@@ -6,21 +6,30 @@ import Dashboard from './components/Dashboard';
 import Analytics from './components/Analytics';
 import Personalization from './components/Personalization';
 import AdvancedOptions from './components/AdvancedOptions';
+import SplashScreen from './components/SplashScreen';
 import Logo from './components/Logo';
 
 const App: React.FC = () => {
   const [user, setUser] = useState<User | null>(null);
-  const [view, setView] = useState<ViewState>('auth');
+  const [view, setView] = useState<ViewState>('splash');
   const [history, setHistory] = useState<HistoryData>({});
   const [notes, setNotes] = useState<Note[]>([]);
   const checkIntervalRef = useRef<number | null>(null);
 
+  // Splash Screen Timer Logic
   useEffect(() => {
-    const sessionEmail = sessionStorage.getItem('active_session_email');
-    if (sessionEmail) {
-      loadUserData(sessionEmail);
+    if (view === 'splash') {
+      const timer = setTimeout(() => {
+        const sessionEmail = sessionStorage.getItem('active_session_email');
+        if (sessionEmail) {
+          loadUserData(sessionEmail);
+        } else {
+          setView('auth');
+        }
+      }, 3000); // 3 seconds total splash time
+      return () => clearTimeout(timer);
     }
-  }, []);
+  }, [view]);
 
   useEffect(() => {
     if (user?.isDarkMode) {
@@ -35,7 +44,7 @@ const App: React.FC = () => {
     }
   }, [user?.isDarkMode, user?.themeColor]);
 
-  // Enhanced Notification Engine with Smart Alerts
+  // Enhanced Notification Engine with Recurring Logic & Priorities
   useEffect(() => {
     if (user && user.notificationSettings.enabled) {
       checkIntervalRef.current = window.setInterval(() => {
@@ -45,29 +54,41 @@ const App: React.FC = () => {
         
         let changed = false;
         
-        // 1. Process Individual Notes
+        // 1. Process Individual Notes & Reminders
         const updatedNotes = notes.map(note => {
-          if (!note.notified && new Date(note.dueTime) <= now) {
-            triggerNotification("Pulse Alert", note.text);
+          if (!note.completed && !note.notified && new Date(note.dueTime) <= now) {
+            const priorityPrefix = note.priority === 'high' ? '🚨 [URGENT] ' : note.priority === 'medium' ? '⚡ [PULSE] ' : '📝 ';
+            triggerNotification(priorityPrefix + note.title, note.text);
+            
             changed = true;
+
+            // Handle Recurrence
+            if (note.recurring !== 'none') {
+              const nextDue = new Date(note.dueTime);
+              if (note.recurring === 'daily') nextDue.setDate(nextDue.getDate() + 1);
+              if (note.recurring === 'weekly') nextDue.setDate(nextDue.getDate() + 7);
+              
+              return { ...note, dueTime: nextDue.toISOString(), notified: false };
+            }
+
             return { ...note, notified: true };
           }
           return note;
         });
 
-        // 2. Morning Motivation (Fixed at 09:00)
+        // 2. Morning Motivation
         if (user.notificationSettings.morningReminder && currentTime === "09:00") {
           triggerNotification("Rise & Pulse", "Today is a fresh canvas. Ignite your productivity!");
         }
 
-        // 3. Evening Summary (Fixed at 21:00)
+        // 3. Evening Summary
         if (user.notificationSettings.eveningSummary && currentTime === "21:00") {
           const today = now.toISOString().split('T')[0];
           const completed = Object.values(history[today] || {}).filter(v => v).length;
           triggerNotification("Day Concluded", `You finished ${completed} goals today. Great work!`);
         }
 
-        // 4. Smart "Nudge" (If tasks are pending in the afternoon)
+        // 4. Smart Afternoon Nudge
         if (currentHour === 14 && now.getMinutes() === 0) {
           const today = now.toISOString().split('T')[0];
           const completedCount = Object.values(history[today] || {}).filter(v => v).length;
@@ -107,6 +128,8 @@ const App: React.FC = () => {
       setHistory(data.history || {});
       setNotes(data.notes || []);
       setView('dashboard');
+    } else {
+      setView('auth');
     }
   };
 
@@ -193,9 +216,11 @@ const App: React.FC = () => {
 
   return (
     <div className={`min-h-screen transition-colors duration-300 flex flex-col ${user?.isDarkMode ? 'bg-slate-950 text-slate-100' : 'bg-slate-50 text-slate-900'}`}>
+      {view === 'splash' && <SplashScreen />}
+      
       {view === 'auth' ? (
         <Auth onLogin={handleLogin} />
-      ) : (
+      ) : view !== 'splash' ? (
         <>
           <nav className={`sticky top-0 z-50 border-b backdrop-blur-md ${user?.isDarkMode ? 'bg-slate-950/80 border-slate-800' : 'bg-white/80 border-slate-200'}`}>
             <div className="max-w-6xl mx-auto px-4 h-16 flex items-center justify-between">
@@ -253,7 +278,7 @@ const App: React.FC = () => {
             )}
           </main>
         </>
-      )}
+      ) : null}
     </div>
   );
 };

@@ -7,9 +7,9 @@ import {
   BarChart, 
   Bar, 
   ResponsiveContainer, 
-  XAxis as ReXAxis, 
-  YAxis as ReYAxis,
-  Cell
+  Cell,
+  PieChart,
+  Pie
 } from 'recharts';
 
 interface AdvancedOptionsProps {
@@ -20,44 +20,14 @@ interface AdvancedOptionsProps {
   onRestore: (data: { user: User, history: HistoryData, notes: Note[] }) => void;
 }
 
-const THEME_COLORS = [
-  { name: 'Classic Indigo', hex: '#4f46e5' },
-  { name: 'Forest Green', hex: '#059669' },
-  { name: 'Sunset Orange', hex: '#ea580c' },
-  { name: 'Deep Purple', hex: '#7c3aed' },
-  { name: 'Rose Red', hex: '#e11d48' },
-  { name: 'Ocean Blue', hex: '#0ea5e9' },
-];
-
 type TabId = 'appearance' | 'widgets' | 'streaks' | 'security';
-type WidgetBlueprint = 'summary' | 'progress' | 'heatmap';
+type WidgetBlueprint = 'pulse-ring' | 'summary-card' | 'weekly-spark';
 
 const AdvancedOptions: React.FC<AdvancedOptionsProps> = ({ user, history, notes, onUpdateUser, onRestore }) => {
-  const [activeTab, setActiveTab] = useState<TabId>('appearance');
-  const [backupStatus, setBackupStatus] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<TabId>('widgets');
   const [widgetSize, setWidgetSize] = useState<'small' | 'medium' | 'large'>('medium');
-  const [activeBlueprint, setActiveBlueprint] = useState<WidgetBlueprint>('progress');
-
-  const toggleWidget = (id: string) => {
-    const active = user.activeWidgets.includes(id)
-      ? user.activeWidgets.filter(w => w !== id)
-      : [...user.activeWidgets, id];
-    onUpdateUser({ ...user, activeWidgets: active });
-  };
-
-  const requestNotificationPermission = async () => {
-    if (!("Notification" in window)) {
-      alert("This browser does not support system notifications.");
-      return;
-    }
-    const permission = await Notification.requestPermission();
-    if (permission === "granted") {
-      onUpdateUser({ 
-        ...user, 
-        notificationSettings: { ...user.notificationSettings, enabled: true } 
-      });
-    }
-  };
+  const [activeBlueprint, setActiveBlueprint] = useState<WidgetBlueprint>('pulse-ring');
+  const [wallpaper, setWallpaper] = useState<'light' | 'dark'>('dark');
 
   const streakStats = useMemo(() => {
     let current = 0;
@@ -71,9 +41,8 @@ const AdvancedOptions: React.FC<AdvancedOptionsProps> = ({ user, history, notes,
     sortedDates.forEach(dStr => {
       const hasProgress = history[dStr] && Object.values(history[dStr]).some(v => v === true);
       if (hasProgress) {
-        if (!lastDate) {
-          tempLongest = 1;
-        } else {
+        if (!lastDate) tempLongest = 1;
+        else {
           const diff = (new Date(dStr).getTime() - lastDate.getTime()) / (1000 * 3600 * 24);
           if (diff === 1) tempLongest++;
           else tempLongest = 1;
@@ -98,39 +67,268 @@ const AdvancedOptions: React.FC<AdvancedOptionsProps> = ({ user, history, notes,
     return { current, longest };
   }, [history]);
 
-  const heatmap = useMemo(() => {
-    const data = [];
-    const now = new Date();
-    for (let i = 29; i >= 0; i--) {
-      const d = new Date(now);
-      d.setDate(now.getDate() - i);
+  const productivityMetrics = useMemo(() => {
+    const today = new Date().toISOString().split('T')[0];
+    const todayCompleted = history[today] ? Object.values(history[today]).filter(v => v).length : 0;
+    const goalCount = user.selectedActivityIds.length || 1;
+    const percentage = Math.round((todayCompleted / goalCount) * 100);
+    
+    // Heuristic: Each task is roughly 45 minutes of productive time
+    const todayMinutes = todayCompleted * 45;
+    
+    const last7Days = [];
+    let totalWeeklyCompleted = 0;
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date();
+      d.setDate(d.getDate() - i);
       const dStr = d.toISOString().split('T')[0];
-      const completed = history[dStr] ? Object.values(history[dStr]).filter(v => v).length : 0;
-      data.push({ 
-        date: dStr, 
-        count: completed,
-        day: d.toLocaleDateString('en-US', { weekday: 'short' })
+      const count = history[dStr] ? Object.values(history[dStr]).filter(v => v).length : 0;
+      totalWeeklyCompleted += count;
+      last7Days.push({ 
+        day: d.toLocaleDateString('en-US', { weekday: 'short' }), 
+        count,
+        time: count * 45 
       });
     }
-    return data;
-  }, [history]);
+
+    const weeklyTimeStr = `${Math.floor((totalWeeklyCompleted * 45) / 60)}h ${(totalWeeklyCompleted * 45) % 60}m`;
+    const todayTimeStr = `${Math.floor(todayMinutes / 60)}h ${todayMinutes % 60}m`;
+
+    let motivation = "Ready to start?";
+    if (percentage === 100) motivation = "Absolute Beast Mode! 🏆";
+    else if (percentage >= 75) motivation = "Main Character Energy ✨";
+    else if (percentage >= 40) motivation = "Keep the momentum! ⚡";
+    else if (percentage > 0) motivation = "The pulse is rising... 📈";
+
+    return { percentage, todayMinutes, todayTimeStr, weeklyTimeStr, last7Days, motivation, todayCompleted, goalCount };
+  }, [history, user.selectedActivityIds]);
+
+  // Fix: Added missing requestNotificationPermission function
+  const requestNotificationPermission = async () => {
+    if (!("Notification" in window)) {
+      alert("This browser does not support desktop notifications.");
+      return;
+    }
+    
+    const permission = await Notification.requestPermission();
+    if (permission === "granted") {
+      onUpdateUser({
+        ...user,
+        notificationSettings: {
+          ...user.notificationSettings,
+          enabled: true
+        }
+      });
+    } else {
+      alert("Notification access was denied. You can enable them in your browser settings to receive Pulse alerts.");
+    }
+  };
+
+  const ringData = [
+    { name: 'Completed', value: productivityMetrics.percentage },
+    { name: 'Remaining', value: 100 - productivityMetrics.percentage }
+  ];
 
   return (
-    <div className="flex flex-col lg:flex-row gap-8 min-h-[600px] animate-in fade-in slide-in-from-bottom-6 duration-700">
+    <div className="flex flex-col lg:flex-row gap-8 min-h-[700px] animate-in fade-in slide-in-from-bottom-6 duration-700">
       <aside className="lg:w-64 space-y-2 flex-shrink-0">
-        <h2 className="text-xl font-black mb-6 dark:text-white px-2">Command Center</h2>
-        <TabButton active={activeTab === 'appearance'} onClick={() => setActiveTab('appearance')} icon="🎨" label="Appearance" />
-        <TabButton active={activeTab === 'widgets'} onClick={() => setActiveTab('widgets')} icon="🧩" label="Widget Architect" />
+        <h2 className="text-xl font-black mb-6 dark:text-white px-2">Control Center</h2>
+        <TabButton active={activeTab === 'widgets'} onClick={() => setActiveTab('widgets')} icon="📱" label="Android Simulator" />
         <TabButton active={activeTab === 'streaks'} onClick={() => setActiveTab('streaks')} icon="🔥" label="Streaks Hub" />
-        <TabButton active={activeTab === 'security'} onClick={() => setActiveTab('security')} icon="🛡️" label="Notifications & Access" />
+        <TabButton active={activeTab === 'appearance'} onClick={() => setActiveTab('appearance')} icon="🎨" label="Visual Theme" />
+        <TabButton active={activeTab === 'security'} onClick={() => setActiveTab('security')} icon="🛡️" label="Access Rules" />
       </aside>
 
-      <div className="flex-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-[2.5rem] p-8 shadow-sm">
+      <div className="flex-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-[3rem] p-8 shadow-sm">
+        {activeTab === 'widgets' && (
+          <div className="space-y-10 animate-in fade-in duration-300">
+            <div className="flex flex-col sm:flex-row justify-between items-start gap-4">
+              <div>
+                <h3 className="text-2xl font-black tracking-tight dark:text-white mb-2">Android Home Screen</h3>
+                <p className="text-slate-500 text-sm font-medium">Customize and prototype your system-level Pulse widgets.</p>
+              </div>
+              <div className="flex bg-slate-100 dark:bg-slate-800 p-1 rounded-2xl">
+                 <button onClick={() => setActiveBlueprint('pulse-ring')} className={`px-4 py-2 text-[10px] font-black rounded-xl transition-all ${activeBlueprint === 'pulse-ring' ? 'bg-brand text-white shadow-lg' : 'text-slate-500 hover:text-slate-700'}`}>Ring</button>
+                 <button onClick={() => setActiveBlueprint('summary-card')} className={`px-4 py-2 text-[10px] font-black rounded-xl transition-all ${activeBlueprint === 'summary-card' ? 'bg-brand text-white shadow-lg' : 'text-slate-500 hover:text-slate-700'}`}>Stats</button>
+                 <button onClick={() => setActiveBlueprint('weekly-spark')} className={`px-4 py-2 text-[10px] font-black rounded-xl transition-all ${activeBlueprint === 'weekly-spark' ? 'bg-brand text-white shadow-lg' : 'text-slate-500 hover:text-slate-700'}`}>Weekly</button>
+              </div>
+            </div>
+
+            {/* Mobile Simulator */}
+            <div className={`relative w-full max-w-[500px] aspect-[9/16] mx-auto rounded-[3.5rem] border-[10px] border-slate-900 shadow-[0_0_80px_rgba(0,0,0,0.2)] overflow-hidden transition-all duration-700 ${wallpaper === 'dark' ? 'bg-slate-950' : 'bg-blue-100'}`}>
+               {/* Wallpaper Simulation */}
+               <div className={`absolute inset-0 transition-opacity duration-1000 ${wallpaper === 'dark' ? 'opacity-100' : 'opacity-0'}`}>
+                 <div className="absolute top-1/4 right-0 w-80 h-80 bg-indigo-600/30 blur-[100px] rounded-full"></div>
+                 <div className="absolute bottom-1/4 left-0 w-80 h-80 bg-emerald-600/20 blur-[100px] rounded-full"></div>
+               </div>
+               <div className={`absolute inset-0 transition-opacity duration-1000 ${wallpaper === 'light' ? 'opacity-100' : 'opacity-0'}`}>
+                 <div className="absolute top-1/4 left-0 w-80 h-80 bg-orange-200 blur-[100px] rounded-full"></div>
+                 <div className="absolute bottom-1/4 right-0 w-80 h-80 bg-blue-300 blur-[100px] rounded-full"></div>
+               </div>
+
+               {/* Status Bar */}
+               <div className="relative z-10 p-6 flex justify-between items-center text-white/80 font-bold text-[10px]">
+                  <span>{new Date().toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</span>
+                  <div className="flex gap-1.5 items-center">
+                    <div className="w-3.5 h-3.5 border-2 border-white/40 rounded-sm"></div>
+                    <div className="w-4 h-2 bg-white/60 rounded-sm"></div>
+                  </div>
+               </div>
+
+               {/* Widget Area */}
+               <div className="relative z-10 mt-12 px-6 flex flex-col items-center">
+                  <div className={`transition-all duration-700 bg-white/10 backdrop-blur-3xl border border-white/20 shadow-[0_20px_50px_rgba(0,0,0,0.3)] rounded-[2.5rem] p-6 group flex flex-col justify-between ${
+                    widgetSize === 'small' ? 'w-44 h-44' : 
+                    widgetSize === 'medium' ? 'w-full h-44' : 'w-full h-80'
+                  }`}>
+                    
+                    {/* Ring Blueprint */}
+                    {activeBlueprint === 'pulse-ring' && (
+                      <div className="flex-1 flex flex-col items-center justify-center relative">
+                         <div className="w-full h-full flex flex-col items-center justify-center">
+                           <ResponsiveContainer width="100%" height="100%">
+                              <PieChart>
+                                <Pie
+                                  data={ringData}
+                                  innerRadius="75%"
+                                  outerRadius="95%"
+                                  paddingAngle={5}
+                                  dataKey="value"
+                                  startAngle={90}
+                                  endAngle={-270}
+                                >
+                                  <Cell fill="var(--brand-primary)" />
+                                  <Cell fill="rgba(255,255,255,0.05)" />
+                                </Pie>
+                              </PieChart>
+                           </ResponsiveContainer>
+                           <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                              <p className="text-3xl font-black text-white">{productivityMetrics.percentage}%</p>
+                              {widgetSize !== 'small' && <p className="text-[10px] font-black text-white/40 uppercase tracking-widest mt-1">Pulse Score</p>}
+                           </div>
+                         </div>
+                      </div>
+                    )}
+
+                    {/* Summary Blueprint */}
+                    {activeBlueprint === 'summary-card' && (
+                      <div className="flex-1 flex flex-col justify-between py-2">
+                        <div className="flex justify-between items-start">
+                          <Logo size={24} />
+                          <div className="text-right">
+                             <p className="text-white text-lg font-black">{productivityMetrics.todayTimeStr}</p>
+                             <p className="text-[10px] font-black text-white/40 uppercase">Total Focus</p>
+                          </div>
+                        </div>
+                        <div className="grid grid-cols-2 gap-4">
+                           <div className="bg-white/5 p-3 rounded-2xl border border-white/5">
+                              <p className="text-brand font-black text-xl">{productivityMetrics.todayCompleted}</p>
+                              <p className="text-[9px] font-black text-white/40 uppercase">Tasks</p>
+                           </div>
+                           <div className="bg-white/5 p-3 rounded-2xl border border-white/5 text-right">
+                              <p className="text-emerald-400 font-black text-xl">{streakStats.current}D</p>
+                              <p className="text-[9px] font-black text-white/40 uppercase">Streak</p>
+                           </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Weekly Blueprint */}
+                    {activeBlueprint === 'weekly-spark' && (
+                      <div className="flex-1 flex flex-col justify-between py-1">
+                        <div className="flex justify-between items-center mb-3">
+                           <p className="text-white text-xs font-black uppercase tracking-widest">Weekly Sync</p>
+                           <p className="text-brand text-xs font-black">{productivityMetrics.weeklyTimeStr}</p>
+                        </div>
+                        <div className="flex-1">
+                          <ResponsiveContainer width="100%" height="80%">
+                            <BarChart data={productivityMetrics.last7Days}>
+                              <Bar dataKey="count" radius={[4,4,0,0]}>
+                                {productivityMetrics.last7Days.map((entry, index) => (
+                                  <Cell key={`cell-${index}`} fill={index === 6 ? 'var(--brand-primary)' : 'rgba(255,255,255,0.2)'} />
+                                ))}
+                              </Bar>
+                            </BarChart>
+                          </ResponsiveContainer>
+                        </div>
+                        <div className="flex justify-between mt-2">
+                           {productivityMetrics.last7Days.map(d => (
+                             <span key={d.day} className="text-[8px] font-black text-white/30">{d.day.charAt(0)}</span>
+                           ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Motivational Footer */}
+                    {widgetSize === 'large' && (
+                      <div className="mt-6 pt-6 border-t border-white/10 text-center">
+                         <p className="text-white font-black italic">"{productivityMetrics.motivation}"</p>
+                         <p className="text-[9px] font-black text-white/30 uppercase mt-2 tracking-[0.3em]">Last Sync: Just Now</p>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Simulated App Icons */}
+                  <div className="mt-12 grid grid-cols-4 gap-6 w-full">
+                     {[1,2,3,4].map(i => (
+                       <div key={i} className="flex flex-col items-center gap-1.5">
+                          <div className="w-14 h-14 bg-white/10 backdrop-blur-lg border border-white/10 rounded-[1.25rem] flex items-center justify-center text-xl text-white/40">
+                            {i === 1 ? '📸' : i === 2 ? '💬' : i === 3 ? '🎵' : '⚙️'}
+                          </div>
+                          <span className="text-[10px] text-white/50 font-medium">App {i}</span>
+                       </div>
+                     ))}
+                  </div>
+               </div>
+
+               {/* Home Indicator */}
+               <div className="absolute bottom-2 left-1/2 -translate-x-1/2 w-32 h-1 bg-white/20 rounded-full"></div>
+            </div>
+
+            {/* Controls */}
+            <div className="bg-slate-50 dark:bg-slate-800/50 p-8 rounded-[2.5rem] border border-slate-200 dark:border-slate-800 flex flex-col md:flex-row items-center justify-center gap-8">
+               <div className="flex flex-col items-center gap-4">
+                  <p className="text-xs font-black uppercase text-slate-400">Layout Size</p>
+                  <div className="flex bg-white dark:bg-slate-900 p-1.5 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-800">
+                    <button onClick={() => setWidgetSize('small')} className={`px-5 py-2 text-[10px] font-black rounded-xl transition-all ${widgetSize === 'small' ? 'bg-slate-900 text-white' : 'text-slate-500'}`}>2x2</button>
+                    <button onClick={() => setWidgetSize('medium')} className={`px-5 py-2 text-[10px] font-black rounded-xl transition-all ${widgetSize === 'medium' ? 'bg-slate-900 text-white' : 'text-slate-500'}`}>4x2</button>
+                    <button onClick={() => setWidgetSize('large')} className={`px-5 py-2 text-[10px] font-black rounded-xl transition-all ${widgetSize === 'large' ? 'bg-slate-900 text-white' : 'text-slate-500'}`}>4x4</button>
+                  </div>
+               </div>
+               <div className="flex flex-col items-center gap-4">
+                  <p className="text-xs font-black uppercase text-slate-400">Environment</p>
+                  <div className="flex bg-white dark:bg-slate-900 p-1.5 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-800">
+                    <button onClick={() => setWallpaper('dark')} className={`px-5 py-2 text-[10px] font-black rounded-xl transition-all ${wallpaper === 'dark' ? 'bg-slate-900 text-white' : 'text-slate-500'}`}>Night</button>
+                    <button onClick={() => setWallpaper('light')} className={`px-5 py-2 text-[10px] font-black rounded-xl transition-all ${wallpaper === 'light' ? 'bg-slate-900 text-white' : 'text-slate-500'}`}>Day</button>
+                  </div>
+               </div>
+               <button className="flex-1 md:self-end bg-brand text-white py-4 px-8 rounded-3xl font-black text-sm uppercase tracking-widest shadow-xl shadow-brand/20 active:scale-95 transition-transform">
+                  Deploy to Android
+               </button>
+            </div>
+          </div>
+        )}
+
+        {activeTab === 'streaks' && (
+          <div className="space-y-10 animate-in fade-in duration-300">
+             <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                <div className="bg-brand p-8 rounded-[2.5rem] text-white shadow-xl">
+                   <p className="text-xs font-black uppercase tracking-widest opacity-70">Current Heat</p>
+                   <p className="text-6xl font-black mt-2">{streakStats.current}D</p>
+                </div>
+                <div className="bg-slate-100 dark:bg-slate-800 p-8 rounded-[2.5rem] dark:text-white">
+                   <p className="text-xs font-black uppercase tracking-widest text-slate-400">Personal Legend</p>
+                   <p className="text-6xl font-black mt-2">{streakStats.longest}D</p>
+                </div>
+             </div>
+          </div>
+        )}
+
         {activeTab === 'appearance' && (
           <div className="space-y-10 animate-in fade-in duration-300">
             <div>
-              <h3 className="text-2xl font-black tracking-tight dark:text-white mb-2">Visual Identity</h3>
-              <p className="text-slate-500 text-sm">Fine-tune the aesthetic pulse of your interface.</p>
+              <h3 className="text-2xl font-black tracking-tight dark:text-white mb-2">Interface Style</h3>
+              <p className="text-slate-500 text-sm">Fine-tune the aesthetic pulse of ProductivePulse.</p>
             </div>
             <div className="grid grid-cols-3 sm:grid-cols-6 gap-4">
               {THEME_COLORS.map(color => (
@@ -147,132 +345,11 @@ const AdvancedOptions: React.FC<AdvancedOptionsProps> = ({ user, history, notes,
           </div>
         )}
 
-        {activeTab === 'widgets' && (
-          <div className="space-y-12 animate-in fade-in duration-300">
-            <div className="flex justify-between items-end">
-              <div>
-                <h3 className="text-2xl font-black tracking-tight dark:text-white mb-2">Widget Architect</h3>
-                <p className="text-slate-500 text-sm">Deploy live data summaries to your system home screen.</p>
-              </div>
-              <div className="flex bg-slate-100 dark:bg-slate-800 p-1 rounded-xl">
-                 <button onClick={() => setActiveBlueprint('progress')} className={`px-4 py-2 text-[10px] font-black rounded-lg transition-all ${activeBlueprint === 'progress' ? 'bg-brand text-white' : 'text-slate-500 hover:text-slate-700'}`}>Progress</button>
-                 <button onClick={() => setActiveBlueprint('summary')} className={`px-4 py-2 text-[10px] font-black rounded-lg transition-all ${activeBlueprint === 'summary' ? 'bg-brand text-white' : 'text-slate-500 hover:text-slate-700'}`}>Summary</button>
-                 <button onClick={() => setActiveBlueprint('heatmap')} className={`px-4 py-2 text-[10px] font-black rounded-lg transition-all ${activeBlueprint === 'heatmap' ? 'bg-brand text-white' : 'text-slate-500 hover:text-slate-700'}`}>Heatmap</button>
-              </div>
-            </div>
-
-            <div className="bg-slate-50 dark:bg-slate-950 p-8 sm:p-12 rounded-[3.5rem] border-4 border-slate-200 dark:border-slate-800 flex flex-col items-center justify-center min-h-[450px] relative overflow-hidden">
-               <div className="absolute top-4 left-1/2 -translate-x-1/2 w-24 h-1.5 bg-slate-200 dark:bg-slate-800 rounded-full"></div>
-               
-               <div className={`transition-all duration-700 bg-white dark:bg-slate-900 shadow-2xl rounded-[2.5rem] border border-slate-200 dark:border-slate-800 p-6 flex flex-col justify-between overflow-hidden group ${
-                 widgetSize === 'small' ? 'w-44 h-44' : 
-                 widgetSize === 'medium' ? 'w-full max-w-[340px] h-44' : 'w-full max-w-[340px] h-80'
-               }`}>
-                  <div className="flex justify-between items-start">
-                    <div className="flex items-center gap-2">
-                      <Logo size={24} />
-                      <span className="text-[10px] font-black text-slate-400 uppercase tracking-tighter">ProductivePulse</span>
-                    </div>
-                    <span className="text-[10px] font-black text-brand bg-brand/10 px-2 py-0.5 rounded-full">{streakStats.current}D 🔥</span>
-                  </div>
-
-                  {activeBlueprint === 'progress' && (
-                    <div className="flex-1 mt-4">
-                      <div className="flex justify-between items-end mb-1">
-                         <p className="text-xl font-black dark:text-white">Goal Progress</p>
-                         <p className="text-[10px] font-black text-slate-400">76%</p>
-                      </div>
-                      <div className="h-10 w-full">
-                        <ResponsiveContainer width="100%" height="100%">
-                          <BarChart data={heatmap.slice(-7)}>
-                            <Bar dataKey="count" radius={[4,4,0,0]}>
-                              {heatmap.slice(-7).map((entry, index) => (
-                                <Cell key={`cell-${index}`} fill={index === 6 ? 'var(--brand-primary)' : 'var(--brand-primary-light)'} />
-                              ))}
-                            </Bar>
-                          </BarChart>
-                        </ResponsiveContainer>
-                      </div>
-                    </div>
-                  )}
-
-                  {activeBlueprint === 'summary' && (
-                    <div className="flex-1 flex flex-col justify-center gap-2 mt-4">
-                       <div className="flex items-center gap-3">
-                          <div className="w-8 h-8 rounded-lg bg-indigo-500/10 text-indigo-500 flex items-center justify-center text-sm">📅</div>
-                          <div>
-                            <p className="text-[10px] font-black text-slate-400 uppercase">Tasks Today</p>
-                            <p className="text-lg font-black dark:text-white">{heatmap[29].count} Completed</p>
-                          </div>
-                       </div>
-                       {widgetSize === 'large' && (
-                         <div className="flex items-center gap-3 mt-2">
-                            <div className="w-8 h-8 rounded-lg bg-emerald-500/10 text-emerald-500 flex items-center justify-center text-sm">🏃</div>
-                            <div>
-                              <p className="text-[10px] font-black text-slate-400 uppercase">Top Category</p>
-                              <p className="text-lg font-black dark:text-white">Physical</p>
-                            </div>
-                         </div>
-                       )}
-                    </div>
-                  )}
-
-                  {activeBlueprint === 'heatmap' && (
-                    <div className="flex-1 mt-4 grid grid-cols-7 gap-1">
-                       {heatmap.slice(-21).map((h, i) => (
-                         <div key={i} title={h.date} className={`aspect-square rounded-[4px] ${h.count > 4 ? 'bg-brand' : h.count > 0 ? 'bg-brand/40' : 'bg-slate-100 dark:bg-slate-800'}`}></div>
-                       ))}
-                    </div>
-                  )}
-
-                  <div className="mt-4 flex justify-between items-end">
-                    <p className="text-[9px] font-black text-slate-400 uppercase">Live: {new Date().toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</p>
-                    {widgetSize === 'large' && <button className="px-3 py-1 bg-brand text-white text-[9px] font-black uppercase rounded-lg">Sync</button>}
-                  </div>
-               </div>
-
-               <div className="mt-12 flex gap-3">
-                  <SizeBtn active={widgetSize === 'small'} onClick={() => setWidgetSize('small')}>2x2</SizeBtn>
-                  <SizeBtn active={widgetSize === 'medium'} onClick={() => setWidgetSize('medium')}>2x4</SizeBtn>
-                  <SizeBtn active={widgetSize === 'large'} onClick={() => setWidgetSize('large')}>4x4</SizeBtn>
-               </div>
-            </div>
-
-            <button className="w-full bg-slate-900 dark:bg-white text-white dark:text-slate-900 py-6 rounded-3xl font-black text-lg shadow-xl shadow-brand/10 flex items-center justify-center gap-3 hover:scale-[1.02] transition-transform active:scale-95">
-               Deploy Widget to Device
-               <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" strokeWidth={3}/></svg>
-            </button>
-          </div>
-        )}
-
-        {activeTab === 'streaks' && (
-          <div className="space-y-10 animate-in fade-in duration-300">
-             <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-                <div className="bg-brand p-8 rounded-[2.5rem] text-white shadow-xl">
-                   <p className="text-xs font-black uppercase tracking-widest opacity-70">Current Heat</p>
-                   <p className="text-6xl font-black mt-2">{streakStats.current}D</p>
-                </div>
-                <div className="bg-slate-100 dark:bg-slate-800 p-8 rounded-[2.5rem] dark:text-white">
-                   <p className="text-xs font-black uppercase tracking-widest text-slate-400">Personal Legend</p>
-                   <p className="text-6xl font-black mt-2">{streakStats.longest}D</p>
-                </div>
-             </div>
-             <div className="p-8 border border-slate-100 dark:border-slate-800 rounded-[2.5rem]">
-                <p className="text-xs font-black uppercase tracking-widest text-slate-400 mb-4">Consistency Map</p>
-                <div className="flex flex-wrap gap-2">
-                   {heatmap.map((h, i) => (
-                     <div key={i} className={`w-8 h-8 rounded-lg ${h.count > 0 ? 'bg-brand' : 'bg-slate-100 dark:bg-slate-800'} transition-all hover:scale-125`} title={h.date}></div>
-                   ))}
-                </div>
-             </div>
-          </div>
-        )}
-
         {activeTab === 'security' && (
           <div className="space-y-10 animate-in fade-in duration-300">
             <div>
-              <h3 className="text-2xl font-black tracking-tight dark:text-white mb-2">Notification Command Center</h3>
-              <p className="text-slate-500 text-sm">Manage how Pulse interacts with your system environment.</p>
+              <h3 className="text-2xl font-black tracking-tight dark:text-white mb-2">Notification Center</h3>
+              <p className="text-slate-500 text-sm">System-level access for timely focus reminders.</p>
             </div>
 
             <div className={`p-8 rounded-[2.5rem] border transition-all ${user.notificationSettings.enabled ? 'bg-emerald-500/10 border-emerald-500/20' : 'bg-slate-50 dark:bg-slate-950 border-slate-200 dark:border-slate-800'}`}>
@@ -282,7 +359,7 @@ const AdvancedOptions: React.FC<AdvancedOptionsProps> = ({ user, history, notes,
                   </div>
                   <div className="flex-1 text-center md:text-left">
                      <p className="text-xl font-black dark:text-white">System Reminders</p>
-                     <p className="text-slate-500 text-sm mt-1">Receive Pulse alerts when the app is in background or closed.</p>
+                     <p className="text-slate-500 text-sm mt-1">Receive Pulse alerts when the app is backgrounded.</p>
                   </div>
                   <button 
                     onClick={requestNotificationPermission}
@@ -290,7 +367,7 @@ const AdvancedOptions: React.FC<AdvancedOptionsProps> = ({ user, history, notes,
                       user.notificationSettings.enabled ? 'bg-emerald-500 text-white hover:bg-emerald-600' : 'bg-brand text-white hover:bg-brand/90'
                     }`}
                   >
-                    {user.notificationSettings.enabled ? 'Access Granted' : 'Enable System Access'}
+                    {user.notificationSettings.enabled ? 'Access Granted' : 'Enable Access'}
                   </button>
                </div>
 
@@ -298,34 +375,18 @@ const AdvancedOptions: React.FC<AdvancedOptionsProps> = ({ user, history, notes,
                  <div className="mt-8 grid grid-cols-1 sm:grid-cols-2 gap-4 pt-8 border-t border-emerald-500/10 animate-in slide-in-from-top-4">
                     <ToggleField 
                       label="Morning Motivation" 
-                      desc="Scheduled for 09:00 AM" 
+                      desc="09:00 AM Prompt" 
                       active={user.notificationSettings.morningReminder} 
                       onToggle={() => onUpdateUser({...user, notificationSettings: {...user.notificationSettings, morningReminder: !user.notificationSettings.morningReminder}})} 
                     />
                     <ToggleField 
                       label="Evening Summary" 
-                      desc="Daily score at 09:00 PM" 
+                      desc="21:00 PM Recap" 
                       active={user.notificationSettings.eveningSummary} 
                       onToggle={() => onUpdateUser({...user, notificationSettings: {...user.notificationSettings, eveningSummary: !user.notificationSettings.eveningSummary}})} 
                     />
                  </div>
                )}
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div className="p-8 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-[2.5rem] space-y-4">
-                 <p className="font-black dark:text-white">Portable Backup</p>
-                 <p className="text-xs text-slate-500">Download a JSON archive of your entire focus history.</p>
-                 <button onClick={() => {}} className="w-full py-4 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-slate-100 transition-all">Generate Export</button>
-              </div>
-              <div className="p-8 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-[2.5rem] space-y-4">
-                 <p className="font-black dark:text-white">Restore Session</p>
-                 <p className="text-xs text-slate-500">Upload a pulse_backup.json to restore your data.</p>
-                 <label className="block w-full py-4 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-slate-100 transition-all text-center cursor-pointer">
-                   Select File
-                   <input type="file" onChange={(e) => {}} className="hidden" accept=".json" />
-                 </label>
-              </div>
             </div>
           </div>
         )}
@@ -344,15 +405,6 @@ const TabButton: React.FC<{ active: boolean, onClick: () => void, icon: string, 
   </button>
 );
 
-const SizeBtn: React.FC<{ active: boolean, onClick: () => void, children: React.ReactNode }> = ({ active, onClick, children }) => (
-  <button 
-    onClick={onClick} 
-    className={`px-6 py-2 rounded-xl font-black text-[10px] uppercase tracking-[0.2em] transition-all ${active ? 'bg-brand text-white shadow-lg' : 'bg-slate-200 dark:bg-slate-800 text-slate-500 hover:bg-slate-300'}`}
-  >
-    {children}
-  </button>
-);
-
 const ToggleField: React.FC<{ label: string, desc: string, active: boolean, onToggle: () => void }> = ({ label, desc, active, onToggle }) => (
   <button onClick={onToggle} className="flex items-center justify-between p-5 bg-white dark:bg-slate-900 border border-emerald-500/10 rounded-3xl hover:border-emerald-500/30 transition-all text-left">
      <div>
@@ -364,5 +416,14 @@ const ToggleField: React.FC<{ label: string, desc: string, active: boolean, onTo
      </div>
   </button>
 );
+
+const THEME_COLORS = [
+  { name: 'Classic Indigo', hex: '#4f46e5' },
+  { name: 'Forest Green', hex: '#059669' },
+  { name: 'Sunset Orange', hex: '#ea580c' },
+  { name: 'Deep Purple', hex: '#7c3aed' },
+  { name: 'Rose Red', hex: '#e11d48' },
+  { name: 'Ocean Blue', hex: '#0ea5e9' },
+];
 
 export default AdvancedOptions;

@@ -1,6 +1,6 @@
 
 import React, { useState } from 'react';
-import { User, HistoryData, Note } from '../types';
+import { User, HistoryData, Note, Priority, Recurrence } from '../types';
 import { ACTIVITIES, CATEGORIES } from '../constants';
 import confetti from 'canvas-confetti';
 
@@ -15,8 +15,14 @@ interface DashboardProps {
 const Dashboard: React.FC<DashboardProps> = ({ user, history, notes, onUpdate, onUpdateNotes }) => {
   const today = new Date().toISOString().split('T')[0];
   const [selectedDate, setSelectedDate] = useState(today);
-  const [noteText, setNoteText] = useState('');
-  const [noteDateTime, setNoteDateTime] = useState('');
+  
+  // Detailed Reminder Form State
+  const [isFormOpen, setIsFormOpen] = useState(false);
+  const [title, setTitle] = useState('');
+  const [text, setText] = useState('');
+  const [dueTime, setDueTime] = useState('');
+  const [priority, setPriority] = useState<Priority>('medium');
+  const [recurring, setRecurring] = useState<Recurrence>('none');
 
   const userActivities = ACTIVITIES.filter(a => user.selectedActivityIds.includes(a.id));
   const dayData = history[selectedDate] || {};
@@ -38,19 +44,50 @@ const Dashboard: React.FC<DashboardProps> = ({ user, history, notes, onUpdate, o
     onUpdate(selectedDate, id, isNowCompleted);
   };
 
-  const handleAddNote = (e: React.FormEvent) => {
+  const handleAddReminder = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!noteText || !noteDateTime) return;
+    if (!title || !dueTime) return;
     const newNote: Note = {
       id: Date.now().toString(),
-      text: noteText,
-      dueTime: new Date(noteDateTime).toISOString(),
+      title,
+      text,
+      dueTime: new Date(dueTime).toISOString(),
+      priority,
+      recurring,
+      completed: false,
       notified: false,
       createdAt: Date.now()
     };
     onUpdateNotes([newNote, ...notes]);
-    setNoteText('');
-    setNoteDateTime('');
+    resetForm();
+  };
+
+  const resetForm = () => {
+    setTitle('');
+    setText('');
+    setDueTime('');
+    setPriority('medium');
+    setRecurring('none');
+    setIsFormOpen(false);
+  };
+
+  const toggleNoteCompletion = (id: string) => {
+    onUpdateNotes(notes.map(n => n.id === id ? { ...n, completed: !n.completed } : n));
+  };
+
+  const snoozeNote = (id: string) => {
+    onUpdateNotes(notes.map(n => {
+      if (n.id === id) {
+        const nextTime = new Date();
+        nextTime.setMinutes(nextTime.getMinutes() + 10); // Snooze for 10 mins
+        return { ...n, dueTime: nextTime.toISOString(), notified: false };
+      }
+      return n;
+    }));
+  };
+
+  const deleteNote = (id: string) => {
+    onUpdateNotes(notes.filter(n => n.id !== id));
   };
 
   return (
@@ -131,51 +168,123 @@ const Dashboard: React.FC<DashboardProps> = ({ user, history, notes, onUpdate, o
         </div>
 
         <div className="lg:sticky lg:top-24 space-y-4">
-           <div className="bg-white dark:bg-slate-900 rounded-[2.5rem] border border-slate-200 dark:border-slate-800 shadow-2xl overflow-hidden flex flex-col h-[520px]">
-             <div className="p-6 bg-slate-950 text-white">
+           <div className="bg-white dark:bg-slate-900 rounded-[2.5rem] border border-slate-200 dark:border-slate-800 shadow-2xl overflow-hidden flex flex-col h-[600px]">
+             <div className="p-6 bg-slate-950 text-white flex justify-between items-center">
                <h4 className="text-lg font-black tracking-tighter flex items-center gap-2">
-                 Daily Log <span className="w-2 h-2 rounded-full bg-brand animate-pulse"></span>
+                 Reminders <span className="w-2 h-2 rounded-full bg-brand animate-pulse"></span>
                </h4>
+               <button 
+                 onClick={() => setIsFormOpen(!isFormOpen)}
+                 className={`w-10 h-10 rounded-full flex items-center justify-center transition-all ${isFormOpen ? 'bg-rose-500 rotate-45' : 'bg-brand shadow-lg shadow-brand/20'}`}
+               >
+                 <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path d="M12 4v16m8-8H4" /></svg>
+               </button>
              </div>
-             <div className="p-4 border-b border-slate-100 dark:border-slate-800">
-                <form onSubmit={handleAddNote} className="space-y-2">
-                   <input 
-                    type="text" 
-                    value={noteText}
-                    onChange={(e) => setNoteText(e.target.value)}
-                    placeholder="Capture a thought..."
-                    className="w-full px-4 py-3 text-xs font-bold bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-2xl focus:ring-2 focus:ring-brand outline-none transition-all dark:text-white"
-                   />
-                   <div className="flex gap-2">
-                      <input 
-                        type="datetime-local" 
-                        value={noteDateTime}
-                        onChange={(e) => setNoteDateTime(e.target.value)}
-                        className="flex-1 px-3 py-2 text-[9px] font-black uppercase bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl outline-none text-slate-500"
-                      />
-                      <button type="submit" className="p-3 bg-brand text-white rounded-xl shadow-lg active:scale-90">
-                        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path d="M12 4v16m8-8H4" strokeWidth={3}/></svg>
-                      </button>
-                   </div>
-                </form>
-             </div>
+
+             {isFormOpen && (
+               <div className="p-6 border-b border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 animate-in slide-in-from-top-4 duration-300">
+                  <form onSubmit={handleAddReminder} className="space-y-4">
+                     <input 
+                      type="text" 
+                      value={title}
+                      onChange={(e) => setTitle(e.target.value)}
+                      placeholder="Reminder Title..."
+                      className="w-full px-4 py-3 text-sm font-black bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl focus:ring-2 focus:ring-brand outline-none transition-all dark:text-white"
+                      required
+                     />
+                     <textarea 
+                      value={text}
+                      onChange={(e) => setText(e.target.value)}
+                      placeholder="Notes (optional)..."
+                      className="w-full px-4 py-3 text-xs font-bold bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl focus:ring-2 focus:ring-brand outline-none transition-all dark:text-white resize-none h-20"
+                     />
+                     <div className="grid grid-cols-2 gap-3">
+                        <div className="space-y-1">
+                          <label className="text-[9px] font-black uppercase text-slate-400 ml-1">Due Time</label>
+                          <input 
+                            type="datetime-local" 
+                            value={dueTime}
+                            onChange={(e) => setDueTime(e.target.value)}
+                            className="w-full px-3 py-3 text-[10px] font-black uppercase bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl outline-none text-slate-500"
+                            required
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <label className="text-[9px] font-black uppercase text-slate-400 ml-1">Priority</label>
+                          <select 
+                            value={priority}
+                            onChange={(e) => setPriority(e.target.value as Priority)}
+                            className="w-full px-3 py-3 text-[10px] font-black uppercase bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl outline-none text-slate-500"
+                          >
+                            <option value="low">Low</option>
+                            <option value="medium">Medium</option>
+                            <option value="high">High</option>
+                          </select>
+                        </div>
+                     </div>
+                     <div className="space-y-1">
+                        <label className="text-[9px] font-black uppercase text-slate-400 ml-1">Repeat</label>
+                        <div className="flex gap-2">
+                           {(['none', 'daily', 'weekly'] as Recurrence[]).map(r => (
+                             <button 
+                               key={r}
+                               type="button"
+                               onClick={() => setRecurring(r)}
+                               className={`flex-1 py-2 text-[10px] font-black uppercase rounded-xl border transition-all ${recurring === r ? 'bg-brand border-brand text-white shadow-lg' : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-400'}`}
+                             >
+                               {r}
+                             </button>
+                           ))}
+                        </div>
+                     </div>
+                     <button type="submit" className="w-full py-4 bg-brand text-white rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl shadow-brand/20 active:scale-95">
+                        Set Reminder
+                     </button>
+                  </form>
+               </div>
+             )}
+
              <div className="flex-1 overflow-y-auto p-5 space-y-5 custom-scrollbar">
                 {notes.length === 0 ? (
                   <div className="h-full flex flex-col items-center justify-center text-center opacity-40 py-10">
-                    <div className="text-4xl mb-4">📓</div>
-                    <p className="text-[10px] font-black uppercase tracking-widest">No entries yet</p>
+                    <div className="text-4xl mb-4">🔔</div>
+                    <p className="text-[10px] font-black uppercase tracking-widest">No active reminders</p>
                   </div>
                 ) : (
                   notes.map(note => (
-                    <div key={note.id} className="relative pl-7 group">
-                       <div className={`absolute left-0 top-2 w-3 h-3 rounded-full border-2 bg-white dark:bg-slate-900 z-10 ${note.notified ? 'border-emerald-500' : 'border-brand'}`}></div>
-                       <div className="p-4 bg-white dark:bg-slate-950 border border-slate-100 dark:border-slate-800 rounded-3xl">
-                          <p className="text-xs font-bold dark:text-slate-300">{note.text}</p>
-                          <div className="mt-3 flex items-center justify-between">
-                             <span className="text-[9px] font-black text-slate-400 uppercase">{new Date(note.dueTime).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</span>
-                             <button onClick={() => onUpdateNotes(notes.filter(n => n.id !== note.id))} className="text-slate-300 hover:text-rose-500 transition-colors">
-                               <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path d="M6 18L18 6M6 6l12 12" /></svg>
-                             </button>
+                    <div key={note.id} className={`relative pl-7 group transition-all ${note.completed ? 'opacity-50 grayscale' : ''}`}>
+                       <div className={`absolute left-0 top-2 w-3 h-3 rounded-full border-2 bg-white dark:bg-slate-900 z-10 ${
+                         note.completed ? 'bg-emerald-500 border-emerald-500' : 
+                         note.priority === 'high' ? 'bg-rose-500 border-rose-500' : 
+                         note.priority === 'medium' ? 'bg-amber-500 border-amber-500' : 'bg-slate-200 border-slate-200'
+                       }`}></div>
+                       <div className="p-4 bg-white dark:bg-slate-950 border border-slate-100 dark:border-slate-800 rounded-3xl shadow-sm hover:shadow-md transition-shadow">
+                          <div className="flex justify-between items-start gap-2">
+                             <div>
+                               <p className={`text-sm font-black dark:text-white ${note.completed ? 'line-through' : ''}`}>{note.title}</p>
+                               <p className="text-[10px] font-bold text-slate-500 mt-1">{note.text}</p>
+                             </div>
+                             {note.recurring !== 'none' && (
+                               <span className="text-[8px] font-black uppercase px-2 py-0.5 bg-slate-100 dark:bg-slate-800 rounded-full text-slate-400">🔄 {note.recurring}</span>
+                             )}
+                          </div>
+                          <div className="mt-4 flex items-center justify-between">
+                             <span className="text-[9px] font-black text-slate-400 uppercase bg-slate-50 dark:bg-slate-800/50 px-2 py-1 rounded-lg">
+                                {new Date(note.dueTime).toLocaleDateString([], {month:'short', day:'numeric'})} • {new Date(note.dueTime).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}
+                             </span>
+                             <div className="flex gap-2">
+                               {!note.completed && (
+                                 <button onClick={() => snoozeNote(note.id)} title="Snooze 10m" className="p-2 text-slate-400 hover:text-amber-500 transition-colors">
+                                   <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" strokeWidth={2}/></svg>
+                                 </button>
+                               )}
+                               <button onClick={() => toggleNoteCompletion(note.id)} title={note.completed ? 'Mark Pending' : 'Mark Done'} className={`p-2 transition-colors ${note.completed ? 'text-emerald-500' : 'text-slate-400 hover:text-emerald-500'}`}>
+                                 <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path d="M5 13l4 4L19 7" strokeWidth={3}/></svg>
+                               </button>
+                               <button onClick={() => deleteNote(note.id)} className="p-2 text-slate-300 hover:text-rose-500 transition-colors">
+                                 <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path d="M6 18L18 6M6 6l12 12" /></svg>
+                               </button>
+                             </div>
                           </div>
                        </div>
                     </div>

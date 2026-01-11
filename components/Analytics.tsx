@@ -1,6 +1,6 @@
 
 import React, { useMemo, useState } from 'react';
-import { HistoryData, User } from '../types';
+import { HistoryData, User, DayProgress } from '../types';
 import { ACTIVITIES, CATEGORIES } from '../constants';
 import { 
   AreaChart, 
@@ -60,11 +60,15 @@ const Analytics: React.FC<AnalyticsProps> = ({ history, user }) => {
   }, [history, timeRange, endDate, userActivities]);
 
   const stats = useMemo(() => {
-    const totalPoints = Object.values(history).reduce((acc: number, day) => {
+    // Fix: Cast Object.values and use reduce generic to resolve 'unknown' type errors
+    const totalPoints = (Object.values(history) as DayProgress[]).reduce<number>((acc, day) => {
       return acc + userActivities.filter(a => day[a.id]).length;
     }, 0);
     
-    const daysTracked = Object.keys(history).length || 1;
+    // Explicitly define daysTracked as number
+    const daysTracked: number = Object.keys(history).length || 1;
+    
+    // Fix: Explicitly treat totalPoints and daysTracked as numbers for arithmetic operations
     const avgPoints = (totalPoints / daysTracked).toFixed(1);
     const efficiency = Math.round((totalPoints / (daysTracked * Math.max(1, userActivities.length))) * 100);
     
@@ -73,7 +77,8 @@ const Analytics: React.FC<AnalyticsProps> = ({ history, user }) => {
 
   const categoryMix = useMemo(() => {
     const counts: Record<string, number> = {};
-    Object.values(history).forEach(day => {
+    // Fix: Cast to DayProgress array for reliable type safety in iteration
+    (Object.values(history) as DayProgress[]).forEach((day: DayProgress) => {
       Object.keys(day).forEach(activityId => {
         if (day[activityId] && user.selectedActivityIds.includes(activityId)) {
           const activity = ACTIVITIES.find(a => a.id === activityId);

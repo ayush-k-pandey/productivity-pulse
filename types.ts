@@ -16,10 +16,17 @@ export interface NotificationSettings {
   reminderTime: string; // HH:mm
 }
 
+export type Priority = 'low' | 'medium' | 'high';
+export type Recurrence = 'none' | 'daily' | 'weekly';
+
 export interface Note {
   id: string;
+  title: string;
   text: string;
   dueTime: string; // ISO string
+  priority: Priority;
+  recurring: Recurrence;
+  completed: boolean;
   notified: boolean;
   createdAt: number;
 }
@@ -53,4 +60,4 @@ export interface UserDataPayload {
   notes: Note[];
 }
 
-export type ViewState = 'auth' | 'personalization' | 'dashboard' | 'analytics' | 'advanced';
+export type ViewState = 'splash' | 'auth' | 'personalization' | 'dashboard' | 'analytics' | 'advanced';

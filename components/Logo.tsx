@@ -4,9 +4,10 @@ import React from 'react';
 interface LogoProps {
   className?: string;
   size?: number | string;
+  animate?: boolean;
 }
 
-const Logo: React.FC<LogoProps> = ({ className = "", size = "100%" }) => {
+const Logo: React.FC<LogoProps> = ({ className = "", size = "100%", animate = false }) => {
   return (
     <svg 
       width={size} 
@@ -29,23 +30,27 @@ const Logo: React.FC<LogoProps> = ({ className = "", size = "100%" }) => {
       
       {/* Stylized P Shape */}
       <path 
+        id="logo-p-shape"
         d="M25 20C25 14.4772 29.4772 10 35 10H55C71.5685 10 85 23.4315 85 40C85 56.5685 71.5685 70 55 70H45V85C45 90.5228 40.5228 95 35 95C29.4772 95 25 90.5228 25 85V20ZM45 30V50H55C60.5228 50 65 45.5228 65 40C65 34.4772 60.5228 30 55 30H45Z" 
         fill="url(#p-gradient)" 
+        className={animate ? "animate-in fade-in slide-in-from-left-12 duration-1000 fill-mode-both" : ""}
       />
       
       {/* Plus Symbol */}
-      <rect 
-        x="72" y="10" 
-        width="10" height="26" 
-        rx="5" 
-        fill="url(#plus-gradient)" 
-      />
-      <rect 
-        x="64" y="18" 
-        width="26" height="10" 
-        rx="5" 
-        fill="url(#plus-gradient)" 
-      />
+      <g id="logo-plus-symbol" className={animate ? "animate-in fade-in zoom-in-50 duration-700 delay-700 fill-mode-both" : ""}>
+        <rect 
+          x="72" y="10" 
+          width="10" height="26" 
+          rx="5" 
+          fill="url(#plus-gradient)" 
+        />
+        <rect 
+          x="64" y="18" 
+          width="26" height="10" 
+          rx="5" 
+          fill="url(#plus-gradient)" 
+        />
+      </g>
     </svg>
   );
 };
